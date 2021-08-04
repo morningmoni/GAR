@@ -11,13 +11,12 @@ sys.path.insert(0, "../dpr")
 import torch
 from torch.utils.data import DataLoader
 from rouge_score import rouge_scorer, scoring
-from pytorch_lightning.loggers import WandbLogger
+# from pytorch_lightning.loggers import WandbLogger
 
 from utils.tokenizers import SimpleTokenizer
 from data.qa_validation import exact_match_score, has_answer
 from lightning_base import BaseTransformer, generic_train, get_linear_schedule_with_warmup
-from utils_gen import SummarizationDataset, choose_gpu, label_smoothed_nll_loss, reweight_labels, \
-    freeze_params
+from utils_gen import SummarizationDataset, choose_gpu, label_smoothed_nll_loss, freeze_params
 from conf import add_generic_args, add_model_specific_args
 
 
@@ -93,11 +92,6 @@ class SummarizationTrainer(BaseTransformer):
         lm_labels = y[:, 1:].clone()  # next tokens (different from newest HF implementation)
         lm_labels[y[:, 1:] == pad_token_id] = -100
 
-        # NB. kw_labels is not used in this project
-        kw_labels = None
-        if 'kw_labels' in batch:
-            # NB [:, 1:] is to match with lm_labels
-            kw_labels = batch["kw_labels"][:, 1:]
         # outputs = self(source_ids, attention_mask=source_mask, decoder_input_ids=y_ids, lm_labels=lm_labels, )
         # loss = outputs[0]
         # add use_cache=False when HF==3
@@ -105,16 +99,8 @@ class SummarizationTrainer(BaseTransformer):
         lm_logits = outputs[0]
         if self.hparams.label_smoothing == 0:
             # Same behavior as modeling_bart.py, besides ignoring pad_token_id
-            if kw_labels is None or self.hparams.label_decay == 1:
-                ce_loss_fct = torch.nn.CrossEntropyLoss()
-                loss = ce_loss_fct(lm_logits.view(-1, lm_logits.shape[-1]), lm_labels.view(-1))
-            else:
-                ce_loss_fct = torch.nn.CrossEntropyLoss(reduction='none')
-                loss = ce_loss_fct(lm_logits.view(-1, lm_logits.shape[-1]), lm_labels.view(-1))
-                token_weights = reweight_labels(kw_labels, self.hparams.label_decay)
-                pad_ct = torch.where(lm_labels.view(-1) == -100)[0].shape[0]
-                total_ct = lm_labels.view(-1).shape[0]
-                loss = torch.sum(loss * token_weights.view(-1)) / (total_ct - pad_ct)
+            ce_loss_fct = torch.nn.CrossEntropyLoss()
+            loss = ce_loss_fct(lm_logits.view(-1, lm_logits.shape[-1]), lm_labels.view(-1))
         else:
             lprobs = torch.nn.functional.log_softmax(lm_logits, dim=-1)
             loss, nll_loss = label_smoothed_nll_loss(
