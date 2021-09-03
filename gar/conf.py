@@ -101,7 +101,7 @@ def add_generic_args(parser, root_dir):
     parser.add_argument(
         "--fp16",
         action='store_true',
-        default=True,
+        default=False,
         help="Whether to use 16-bit (mixed) precision (through NVIDIA apex) instead of 32-bit",
     )
 
